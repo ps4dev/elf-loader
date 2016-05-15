@@ -19,7 +19,7 @@
 
 #include <elfloader.h>
 
-#include "kmain.h"
+#include "main.h"
 
 /* Constants */
 
@@ -124,13 +124,16 @@ void *elfLoaderRunInUserMain(void *arg)
 	char *elfName = "elf";
 	char *elfArgv[3] = { elfName, NULL, NULL }; // double null term for envp
 	int elfArgc = 1;
+	int r;
 
 	if(argument == NULL)
 		return NULL;
 
-	argument->main(elfArgc, elfArgv);
+	r = argument->main(elfArgc, elfArgv);
 	ps4MemoryProtectedDestroy(argument->memory);
+	//ps4MemoryDestroy(argument->memory);
 	free(argument);
+	printf("return (user): %i\n", r);
 
 	return NULL;
 }
@@ -151,11 +154,20 @@ int elfLoaderRunInUser(Elf *elf)
 		return -1;
 	}
 
-	ps4MemoryProtectedCreate(&argument->memory, elfMemorySize(elf));
+	if(ps4MemoryProtectedCreate(&argument->memory, elfMemorySize(elf)) != 0)
+	//if(ps4MemoryCreate(&argument->memory, elfMemorySize(elf)) != PS4_OK)
+	{
+		free(argument);
+		elfDestroyAndFree(elf);
+		return -1;
+	}
+
 	argument->main = NULL;
 	r = elfLoaderLoad(elf, ps4MemoryProtectedGetWritableAddress(argument->memory), ps4MemoryProtectedGetExecutableAddress(argument->memory));
+	//r = elfLoaderLoad(elf, ps4MemoryGetAddress(argument->memory), ps4MemoryGetAddress(argument->memory));
 	if(r == ELF_LOADER_RETURN_OK)
 		argument->main = (ElfMain)((uint8_t *)ps4MemoryProtectedGetExecutableAddress(argument->memory) + elfEntry(elf));
+		//argument->main = (ElfMain)((uint8_t *)ps4MemoryGetAddress(argument->memory) + elfEntry(elf));
 	elfDestroyAndFree(elf); // we don't need the "file" anymore
 
 	if(argument->main != NULL)
@@ -163,6 +175,7 @@ int elfLoaderRunInUser(Elf *elf)
 	else
 	{
 		ps4MemoryProtectedDestroy(argument->memory);
+		//ps4MemoryDestroy(argument->memory);
 		free(argument);
 		return -1;
 	}
@@ -205,7 +218,7 @@ void *elfLoaderRunInKernelMain(void *arg)
 	void *kern_malloc = ps4KernelDlSym("malloc");
 	//void *kern_free = ps4KernelDlSym("free");
 	void *kern_mt = ps4KernelDlSym("M_TEMP");
-	int64_t ret;
+	int64_t r = 0;
 
 	ElfRunKernelArgument ua;
 	ElfRunKernelArgument *ka = (ElfRunKernelArgument *)ps4KernelCall(kern_malloc, sizeof(ElfRunKernelArgument), (int64_t)kern_mt, 0x0102);
@@ -217,10 +230,11 @@ void *elfLoaderRunInKernelMain(void *arg)
 
 	elfDestroyAndFree(elf); // we dispose of non-kernel data and rebuild the elf in kernel
 
-	ps4KernelExecute((void *)elfLoaderRunInKernelKMain, ka, &ret, NULL);
-	printf("%p\n", ret);
+	ps4KernelExecute((void *)elfLoaderRunInKernelKMain, ka, &r, NULL);
+	printf("return (kernel): %i\n", (int)r);
 
-	//ps4KernelCall(kern_free, a->data, (int64_t)kern_mt);
+	//ps4KernelCall(kern_free, ua.data, (int64_t)kern_mt);
+	//ps4KernelCall(kern_free, ka, (int64_t)kern_mt);
 
 	return NULL;
 }
@@ -295,8 +309,9 @@ int main(int argc, char **argv)
 	setvbuf(stdout, NULL, _IONBF, 0);
 	setvbuf(stderr, NULL, _IONBF, 0);
 
+	//FIXME: check pthread_creates
 	// Start handling threads
- 	// "io" will set run once its set up to ensure it gets fds 0,1 and 2
+ 	// "io" will set run once its set up to ensure it gets fds 0,1 and 2 or fail using run
 	pthread_create(&argument.thread.io, NULL, elfLoaderServerIo, &argument);
 	while(argument.run == 0)
 		sleep(0);
@@ -308,20 +323,15 @@ int main(int argc, char **argv)
 
 	// If you like to stop the threads, best just close/reopen the browser
 	// Otherwise send non-elf
-
-	while(1)
-	{
+	while(argument.run == 1)
 		sleep(1);
-		if(argument.run == 0)
-		{
-			shutdown(argument.server.io, SHUT_RDWR);
-			shutdown(argument.server.user, SHUT_RDWR);
-			shutdown(argument.server.kernel, SHUT_RDWR);
-			close(argument.server.io);
-			close(argument.server.user);
-			close(argument.server.kernel);
-		}
-	}
+
+	shutdown(argument.server.io, SHUT_RDWR);
+	shutdown(argument.server.user, SHUT_RDWR);
+	shutdown(argument.server.kernel, SHUT_RDWR);
+	close(argument.server.io);
+	close(argument.server.user);
+	close(argument.server.kernel);
 
 	// This does not imply that the started elfs ended
 	// Kernel stuff will continue to run

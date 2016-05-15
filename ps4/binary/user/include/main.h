@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ps4/memory.h>
+#include <ps4/error.h>
 
 #include <sys/sysent.h>
 
@@ -12,6 +13,7 @@ typedef struct ElfRunUserArgument
 {
 	ElfMain main;
 	Ps4MemoryProtected *memory;
+	//Ps4Memory *memory;
 }
 ElfRunUserArgument;
 

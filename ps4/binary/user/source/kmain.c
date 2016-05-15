@@ -12,13 +12,12 @@
 #include <machine/specialreg.h>
 
 #undef offsetof
-#include <kernel.h>
 #include <ps4/kernel.h>
 #include <ps4/kern.h>
 
 #include <elfloader.h>
 
-#include "kmain.h"
+#include "main.h"
 
 int elfLoaderRunInKernelKMain(struct thread *td, void *uap)
 {
@@ -32,26 +31,26 @@ int elfLoaderRunInKernelKMain(struct thread *td, void *uap)
 	char *elfArgv[3] = { elfName, NULL, NULL }; // double null term for envp
 	int elfArgc = 1;
 
+	ps4KernelProtectionAllDisable();
+
 	Elf *elf = elfCreateLocalUnchecked((void *)buf, arg->data, arg->size);
-	void *writable = malloc(elfMemorySize(elf), mt, M_ZERO | M_WAITOK);
-	void *executable = ps4KernMemoryMalloc(elfMemorySize(elf));
+	//uint8_t *executable = ps4KernMemoryMalloc(elfMemorySize(elf));
+	uint8_t *writable = malloc(elfMemorySize(elf), mt, 0x0102);
 	int entry = elfEntry(elf);
 
 	main = NULL;
-	ps4KernRegisterCr0Set(ps4KernRegisterCr0Get() & ~CR0_WP);
-	r = elfLoaderLoadKernel(elf, writable, executable);
-	ps4KernRegisterCr0Set(ps4KernRegisterCr0Get() | CR0_WP);
+	r = elfLoaderLoad(elf, writable, writable);
 	free(arg->data, mt);
 	free(arg, mt);
 
 	if(r != ELF_LOADER_RETURN_OK)
 		return -1;
 
-	main = (ElfMain)((uint8_t *)executable + entry);
+	main = (ElfMain)(writable + entry);
+	ps4KernelProtectionAllEnable();
 	r = main(elfArgc, elfArgv);
-	ps4KernMemoryFree(executable);
+	//ps4KernMemoryFree(executable);
 	free(writable, mt);
-
 	ps4KernThreadSetReturn0(td, r);
 
 	return PS4_OK;

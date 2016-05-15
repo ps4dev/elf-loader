@@ -895,27 +895,3 @@ int elfLoaderLoad(Elf *elf, void *writable, void *executable)
 
 	return r;
 }
-
-int elfLoaderLoadKernel(Elf *elf, void *writable, void *executable)
-{
-	int r = ELF_LOADER_RETURN_OK;
-
-	if(elf == NULL)
-		return ELF_LOADER_RETURN_ELF_NULL;
- 	if(writable == NULL)
-		return ELF_LOADER_RETURN_NO_WRITABLE_MEMORY;
- 	if(executable == NULL)
-		return ELF_LOADER_RETURN_NO_EXECUTABLE_MEMORY;
-
-	if(!elfLoaderIsLoadable(elf))
-		return ELF_LOADER_RETURN_IS_NOT_LOADABLE;
-
-	if((r = elfLoaderInstantiate(elf, writable)) != ELF_LOADER_RETURN_OK)
-		return r;
-	if((r = elfLoaderInstantiate(elf, executable)) != ELF_LOADER_RETURN_OK)
-		return r;
-
-	r = elfLoaderRelocate(elf, writable, executable);
-
-	return r;
-}
