@@ -25,28 +25,21 @@
 
 #define ELF_SERVER_IO_PORT 5052
 #define ELF_SERVER_USER_PORT 5053
-#define ELF_SERVER_KERNEL_PORT 5054 // does not work yet!
+#define ELF_SERVER_KERNEL_PORT 5054
+#define ELF_SERVER_KERNEL_PROCESS_PORT 5055 // untested (does not crash ...)
 #define ELF_SERVER_RETRY 20
 #define ELF_SERVER_TIMEOUT 1
 #define ELF_SERVER_BACKLOG 10
 
+typedef int (*ElfRunner)(Elf *elf);
+
 typedef struct ElfServerArgument
 {
-	volatile int run;
-	struct
-	{
-		pthread_t io;
-		pthread_t user;
-		pthread_t kernel;
-	}
-	thread;
-	struct
-	{
-		volatile int io; // use atomic
-		volatile int user;
-		volatile int kernel;
-	}
-	server;
+	volatile int *run;
+	pthread_t thread;
+	ElfRunner elfRunner;
+	int descriptor;
+	int port;
 }
 ElfServerArgument;
 
@@ -78,35 +71,35 @@ Elf *elfCreateFromSocket(int client)
 	return elf;
 }
 
-/* IO server */
+/* IO and elf servers */
 
 void *elfLoaderServerIo(void *arg)
 {
 	ElfServerArgument *a = (ElfServerArgument *)arg;
 	int client;
 
-	if((a->server.io = ps4UtilServerCreateEx(ELF_SERVER_IO_PORT, 10, 20, 1)) < 0)
+	if((a->descriptor = ps4UtilServerCreateEx(a->port, ELF_SERVER_BACKLOG, ELF_SERVER_RETRY, ELF_SERVER_TIMEOUT)) < 0)
 	{
-		a->run = -1;
+		*a->run = -1;
 		return NULL;
 	}
 
-	if(a->server.io >= 0 && a->server.io < 3)
+	if(a->descriptor >= 0 && a->descriptor < 3)
 	{
 		// something is wrong and we get a std io fd -> hard-fix with dummies
 		ps4UtilStandardIoRedirectPlain(-1);
-		a->server.io = ps4UtilServerCreateEx(ELF_SERVER_IO_PORT, 10, 20, 1);
-		if(a->server.io >= 0 && a->server.io < 3)
+		a->descriptor = ps4UtilServerCreateEx(a->port, ELF_SERVER_BACKLOG, ELF_SERVER_RETRY, ELF_SERVER_TIMEOUT);
+		if(a->descriptor >= 0 && a->descriptor < 3)
 		{
-			a->run = -1;
+			*a->run = -1;
 			return NULL;
 		}
 	}
 
-	a->run = 1;
-	while(a->run == 1)
+	*a->run = 1;
+	while(*a->run == 1)
 	{
-		client = accept(a->server.io, NULL, NULL);
+		client = accept(a->descriptor, NULL, NULL);
 		if(client < 0)
 			continue;
 		ps4UtilStandardIoRedirectPlain(client);
@@ -116,9 +109,34 @@ void *elfLoaderServerIo(void *arg)
 	return NULL;
 }
 
-/* Userland elf accept server */
+void *elfLoaderServerElf(void *arg)
+{
+	ElfServerArgument *a = (ElfServerArgument *)arg;
+	int client;
+	Elf *elf;
 
-void *elfLoaderRunInUserMain(void *arg)
+ 	if((a->descriptor = ps4UtilServerCreateEx(a->port, ELF_SERVER_BACKLOG, ELF_SERVER_RETRY, ELF_SERVER_TIMEOUT)) < 0)
+		return NULL;
+
+	while(*a->run == 1)
+	{
+		client = accept(a->descriptor, NULL, NULL);
+		if(client < 0)
+			continue;
+		elf = elfCreateFromSocket(client);
+		close(client);
+		if(elf == NULL)
+			break;
+		a->elfRunner(elf);
+	}
+	*a->run = 0;
+
+	return NULL;
+}
+
+/* Userland elf runner */
+
+void *elfLoaderUserMain(void *arg)
 {
 	ElfRunUserArgument *argument = (ElfRunUserArgument *)arg;
 	char *elfName = "elf";
@@ -138,7 +156,7 @@ void *elfLoaderRunInUserMain(void *arg)
 	return NULL;
 }
 
-int elfLoaderRunInUser(Elf *elf)
+int elfLoaderUserRun(Elf *elf)
 {
 	pthread_t thread;
 	ElfRunUserArgument *argument;
@@ -171,7 +189,7 @@ int elfLoaderRunInUser(Elf *elf)
 	elfDestroyAndFree(elf); // we don't need the "file" anymore
 
 	if(argument->main != NULL)
-		pthread_create(&thread, NULL, elfLoaderRunInUserMain, argument);
+		pthread_create(&thread, NULL, elfLoaderUserMain, argument);
 	else
 	{
 		ps4MemoryProtectedDestroy(argument->memory);
@@ -180,106 +198,64 @@ int elfLoaderRunInUser(Elf *elf)
 		return -1;
 	}
 
-	return ELF_LOADER_RETURN_OK;
+	return PS4_OK;
 }
 
-void *elfLoaderServerUser(void *arg)
+/* Kernel & process elf runner */
+//FIXME: checks
+
+void *elfLoaderKernelMain(void *arg)
 {
-	ElfServerArgument *a = (ElfServerArgument *)arg;
-	int client;
-	Elf *elf;
-
- 	if((a->server.user = ps4UtilServerCreateEx(ELF_SERVER_USER_PORT, 10, 20, 1)) < 0)
-		return NULL;
-
-	while(a->run == 1)
-	{
-		client = accept(a->server.user, NULL, NULL);
-		if(client < 0)
-			continue;
-		elf = elfCreateFromSocket(client);
-		close(client);
-		if(elf == NULL)
-			break;
-		elfLoaderRunInUser(elf);
-	}
-	a->run = 0;
-
-	close(a->server.user);
-
+	int p;
+	int64_t r = 0;
+	ElfRunKernelArgument *ka = (ElfRunKernelArgument *)arg;
+	ps4KernelMemoryCopy(&ka->process, &p, sizeof(int));
+	ps4KernelExecute((void *)elfLoaderKernMain, ka, &r, NULL);
+	if(p == 0)
+		printf("return (kernel): %"PRId64"\n", r);
+	else
+		printf("return (kernel process): %"PRId64"\n", r);
 	return NULL;
 }
 
-/* Kernel elf accept server */
-
-void *elfLoaderRunInKernelMain(void *arg)
+int elfLoaderKernelRunEx(Elf *elf, int asProcess)
 {
-	Elf *elf = (Elf *)arg;
-	void *kern_malloc = ps4KernelDlSym("malloc");
-	//void *kern_free = ps4KernelDlSym("free");
-	void *kern_mt = ps4KernelDlSym("M_TEMP");
-	int64_t r = 0;
-
+	pthread_t thread;
 	ElfRunKernelArgument ua;
-	ElfRunKernelArgument *ka = (ElfRunKernelArgument *)ps4KernelCall(kern_malloc, sizeof(ElfRunKernelArgument), (int64_t)kern_mt, 0x0102);
+	ElfRunKernelArgument *ka;
+
+	if(elf == NULL)
+		return -1;
+
+	ka = ps4KernelMemoryMalloc(sizeof(ElfRunKernelArgument));
+	ua.process = asProcess;
 	ua.size = elfGetSize(elf);
-	ua.mt = kern_mt;
-	ua.data = (void *)ps4KernelCall(kern_malloc, ua.size, (int64_t)kern_mt, 0x0102);
+	ua.data = ps4KernelMemoryMalloc(ua.size);
 	ps4KernelMemoryCopy(elfGetData(elf), ua.data, ua.size);
 	ps4KernelMemoryCopy(&ua, ka, sizeof(ElfRunKernelArgument));
 
-	elfDestroyAndFree(elf); // we dispose of non-kernel data and rebuild the elf in kernel
+	elfDestroyAndFree(elf); // we dispose of non-kernel data and rebuild and clean the elf in kernel
 
-	ps4KernelExecute((void *)elfLoaderRunInKernelKMain, ka, &r, NULL);
-	printf("return (kernel): %i\n", (int)r);
-
-	//ps4KernelCall(kern_free, ua.data, (int64_t)kern_mt);
-	//ps4KernelCall(kern_free, ka, (int64_t)kern_mt);
-
-	return NULL;
+	pthread_create(&thread, NULL, elfLoaderKernelMain, ka);
+	return PS4_OK;
 }
 
-int elfLoaderRunInKernel(Elf *elf)
+int elfLoaderKernelRun(Elf *elf)
 {
-	pthread_t thread;
-	if(elf == NULL)
-		return -1;
-	pthread_create(&thread, NULL, elfLoaderRunInKernelMain, elf);
-	return ELF_LOADER_RETURN_OK;
+	return elfLoaderKernelRunEx(elf, 0);
 }
 
-void *elfLoaderServerKernel(void *arg)
+int elfLoaderKernelProcessRun(Elf *elf)
 {
-	ElfServerArgument *a = (ElfServerArgument *)arg;
-	int client;
-	Elf *elf;
-
- 	if((a->server.kernel = ps4UtilServerCreateEx(ELF_SERVER_KERNEL_PORT, 10, 20, 1)) < 0)
-		return NULL;
-
-	while(a->run == 1)
-	{
-		client = accept(a->server.kernel, NULL, NULL);
-		if(client < 0)
-			continue;
-		elf = elfCreateFromSocket(client);
-		close(client);
-		if(elf == NULL)
-			break;
-		elfLoaderRunInKernel(elf);
-	}
-	a->run = 0;
-
-	close(a->server.kernel);
-
-	return NULL;
+	return elfLoaderKernelRunEx(elf, 1);
 }
 
 /* Setup and run threads */
 
 int main(int argc, char **argv)
 {
-	ElfServerArgument argument = {0};
+	volatile int run = 0;
+	ElfServerArgument io, user, kernel, kernelProcess;
 
 	int libc;
 	FILE **__stdinp_address;
@@ -309,36 +285,51 @@ int main(int argc, char **argv)
 	setvbuf(stdout, NULL, _IONBF, 0);
 	setvbuf(stderr, NULL, _IONBF, 0);
 
+	// Setup of server logic(s)
+	io.run = user.run = kernel.run = kernelProcess.run = &run;
+	io.port = ELF_SERVER_IO_PORT;
+	io.elfRunner = NULL;
+	user.port = ELF_SERVER_USER_PORT;
+	user.elfRunner = elfLoaderUserRun;
+	kernel.port = ELF_SERVER_KERNEL_PORT;
+	kernel.elfRunner = elfLoaderKernelRun;
+	kernelProcess.port = ELF_SERVER_KERNEL_PROCESS_PORT;
+	kernelProcess.elfRunner = elfLoaderKernelProcessRun;
+
 	//FIXME: check pthread_creates
 	// Start handling threads
  	// "io" will set run once its set up to ensure it gets fds 0,1 and 2 or fail using run
-	pthread_create(&argument.thread.io, NULL, elfLoaderServerIo, &argument);
-	while(argument.run == 0)
+	pthread_create(&io.thread, NULL, elfLoaderServerIo, &io);
+	while(run == 0)
 		sleep(0);
-	if(argument.run == -1)
+	if(run == -1)
 		return EXIT_FAILURE;
 
-	pthread_create(&argument.thread.user, NULL, elfLoaderServerUser, &argument);
-	pthread_create(&argument.thread.kernel, NULL, elfLoaderServerKernel, &argument);
+	pthread_create(&user.thread, NULL, elfLoaderServerElf, &user);
+	pthread_create(&kernel.thread, NULL, elfLoaderServerElf, &kernel);
+	pthread_create(&kernelProcess.thread, NULL, elfLoaderServerElf, &kernelProcess);
 
 	// If you like to stop the threads, best just close/reopen the browser
 	// Otherwise send non-elf
-	while(argument.run == 1)
+	while(run == 1)
 		sleep(1);
 
-	shutdown(argument.server.io, SHUT_RDWR);
-	shutdown(argument.server.user, SHUT_RDWR);
-	shutdown(argument.server.kernel, SHUT_RDWR);
-	close(argument.server.io);
-	close(argument.server.user);
-	close(argument.server.kernel);
+	shutdown(io.descriptor, SHUT_RDWR);
+	shutdown(user.descriptor, SHUT_RDWR);
+	shutdown(kernel.descriptor, SHUT_RDWR);
+	shutdown(kernelProcess.descriptor, SHUT_RDWR);
+	close(io.descriptor);
+	close(user.descriptor);
+	close(kernel.descriptor);
+	close(kernelProcess.descriptor);
 
 	// This does not imply that the started elfs ended
 	// Kernel stuff will continue to run
 	// User stuff will end on browser close
-	pthread_join(argument.thread.io, NULL);
-	pthread_join(argument.thread.user, NULL);
-	pthread_join(argument.thread.kernel, NULL);
+	pthread_join(io.thread, NULL);
+	pthread_join(user.thread, NULL);
+	pthread_join(kernel.thread, NULL);
+	pthread_join(kernelProcess.thread, NULL);
 
-	return EXIT_SUCCESS;
+	return 0;
 }

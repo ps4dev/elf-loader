@@ -19,10 +19,10 @@ ElfRunUserArgument;
 
 typedef struct ElfRunKernelArgument
 {
-	void *mt;
+	int process;
 	size_t size;
 	void *data;
 }
 ElfRunKernelArgument;
 
-int elfLoaderRunInKernelKMain(struct thread *td, void *uap);
+int elfLoaderKernMain(struct thread *td, void *uap);

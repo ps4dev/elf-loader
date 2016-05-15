@@ -8,6 +8,9 @@
 #include <sys/kernel.h>
 #include <sys/systm.h>
 #include <sys/malloc.h>
+#include <sys/kthread.h>
+
+#include <sys/unistd.h>
 
 #include <machine/specialreg.h>
 
@@ -19,39 +22,71 @@
 
 #include "main.h"
 
-int elfLoaderRunInKernelKMain(struct thread *td, void *uap)
+int elfLoaderKernExecuteEx(ElfRunKernelArgument *arg, int *ret)
 {
-	ElfRunKernelArgument *arg = (ElfRunKernelArgument *)uap;
 	char buf[32];
-	struct malloc_type *mt = arg->mt;
+	Elf *elf;
+	uint8_t *memory;
+	int entry, r;
 	ElfMain main;
-	int r;
 
 	char *elfName = "elf";
-	char *elfArgv[3] = { elfName, NULL, NULL }; // double null term for envp
+	char *elfArgv[3] = { elfName, NULL, NULL };
 	int elfArgc = 1;
 
-	ps4KernelProtectionAllDisable();
+ 	elf = elfCreateLocalUnchecked((void *)buf, arg->data, arg->size);
+	memory = ps4KernMemoryMalloc(elfMemorySize(elf));
+	entry = elfEntry(elf);
+	r = elfLoaderLoad(elf, memory, memory);
+	ps4KernMemoryFree(arg->data);
+	ps4KernMemoryFree(arg);
 
-	Elf *elf = elfCreateLocalUnchecked((void *)buf, arg->data, arg->size);
-	//uint8_t *executable = ps4KernMemoryMalloc(elfMemorySize(elf));
-	uint8_t *writable = malloc(elfMemorySize(elf), mt, 0x0102);
-	int entry = elfEntry(elf);
+	if(r == ELF_LOADER_RETURN_OK)
+	{
+		main = (ElfMain)(memory + entry);
+		r = main(elfArgc, elfArgv);
+		if(ret != NULL)
+			*ret = r;
+		r = PS4_OK;
+	}
+	else
+		r = EINVAL;
 
-	main = NULL;
-	r = elfLoaderLoad(elf, writable, writable);
-	free(arg->data, mt);
-	free(arg, mt);
+	ps4KernMemoryFree(memory);
 
-	if(r != ELF_LOADER_RETURN_OK)
-		return -1;
+	return r;
+}
 
-	main = (ElfMain)(writable + entry);
-	ps4KernelProtectionAllEnable();
-	r = main(elfArgc, elfArgv);
-	//ps4KernMemoryFree(executable);
-	free(writable, mt);
-	ps4KernThreadSetReturn0(td, r);
+void elfLoaderKernProcessExecute(void *arg)
+{
+	elfLoaderKernExecuteEx((ElfRunKernelArgument *)arg, NULL);
+	kproc_exit(0);
+}
 
+int elfLoaderKernExecute(struct thread *td, ElfRunKernelArgument *arg)
+{
+	int r, ret;
+	ret = 0;
+ 	r = elfLoaderKernExecuteEx(arg, &ret);
+	ps4KernThreadSetReturn0(td, ret);
+	return r;
+}
+
+int elfLoaderKernMain(struct thread *td, void *uap)
+{
+	struct proc *newp;
+	ElfRunKernelArgument *arg = (ElfRunKernelArgument *)uap;
+
+	if(arg->process == 0)
+		return elfLoaderKernExecute(td, arg);
+
+	if(kproc_create(elfLoaderKernProcessExecute, uap, &newp, RFPROC | RFNOWAIT | RFCFDG, 0, "ps4sdk-elf") != 0)
+	{
+		ps4KernelMemoryFree(arg->data);
+		ps4KernelMemoryFree(arg);
+		return PS4_KERN_ERROR_OUT_OF_MEMORY;
+	}
+
+	ps4KernThreadSetReturn0(td, (register_t)newp);
 	return PS4_OK;
 }
