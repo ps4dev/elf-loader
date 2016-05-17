@@ -207,14 +207,15 @@ int elfLoaderUserRun(Elf *elf)
 void *elfLoaderKernelMain(void *arg)
 {
 	int p;
-	int64_t r = 0;
+	int64_t r, ret;
 	ElfRunKernelArgument *ka = (ElfRunKernelArgument *)arg;
-	ps4KernelMemoryCopy(&ka->process, &p, sizeof(int));
-	ps4KernelExecute((void *)elfLoaderKernMain, ka, &r, NULL);
+	ps4KernelMemoryCopy(&ka->isProcess, &p, sizeof(int));
+	ret = 0;
+	r = ps4KernelExecute((void *)elfLoaderKernMain, ka, &ret, NULL);
 	if(p == 0)
-		printf("return (kernel): %"PRId64"\n", r);
+		printf("return (kernel): %i %"PRId64"\n", r, ret);
 	else
-		printf("return (kernel process): %"PRId64"\n", r);
+		printf("return (kernel process): %i %"PRId64"\n", r, ret);
 	return NULL;
 }
 
@@ -228,7 +229,7 @@ int elfLoaderKernelRunEx(Elf *elf, int asProcess)
 		return -1;
 
 	ka = ps4KernelMemoryMalloc(sizeof(ElfRunKernelArgument));
-	ua.process = asProcess;
+	ua.isProcess = asProcess;
 	ua.size = elfGetSize(elf);
 	ua.data = ps4KernelMemoryMalloc(ua.size);
 	ps4KernelMemoryCopy(elfGetData(elf), ua.data, ua.size);

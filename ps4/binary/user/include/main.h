@@ -8,6 +8,7 @@
 /* Types */
 
 typedef int (*ElfMain)(int argc, char **argv);
+typedef void (*ElfProcessMain)(void *arg);
 
 typedef struct ElfRunUserArgument
 {
@@ -19,7 +20,7 @@ ElfRunUserArgument;
 
 typedef struct ElfRunKernelArgument
 {
-	int process;
+	int isProcess;
 	size_t size;
 	void *data;
 }

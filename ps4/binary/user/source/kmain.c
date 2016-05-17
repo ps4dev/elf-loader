@@ -15,78 +15,108 @@
 #include <machine/specialreg.h>
 
 #undef offsetof
-#include <ps4/kernel.h>
 #include <ps4/kern.h>
 
 #include <elfloader.h>
 
 #include "main.h"
 
-int elfLoaderKernExecuteEx(ElfRunKernelArgument *arg, int *ret)
+typedef struct ElfKernelProcessInformation
 {
-	char buf[32];
-	Elf *elf;
-	uint8_t *memory;
-	int entry, r;
-	ElfMain main;
-
-	char *elfName = "elf";
-	char *elfArgv[3] = { elfName, NULL, NULL };
-	int elfArgc = 1;
-
- 	elf = elfCreateLocalUnchecked((void *)buf, arg->data, arg->size);
-	memory = ps4KernMemoryMalloc(elfMemorySize(elf));
-	entry = elfEntry(elf);
-	r = elfLoaderLoad(elf, memory, memory);
-	ps4KernMemoryFree(arg->data);
-	ps4KernMemoryFree(arg);
-
-	if(r == ELF_LOADER_RETURN_OK)
-	{
-		main = (ElfMain)(memory + entry);
-		r = main(elfArgc, elfArgv);
-		if(ret != NULL)
-			*ret = r;
-		r = PS4_OK;
-	}
-	else
-		r = EINVAL;
-
-	ps4KernMemoryFree(memory);
-
-	return r;
+	struct proc *process;
+	uint8_t *processMain;
+	uint8_t *main;
+	int64_t argc;
+	char *argv[3];
+	char elfName[128];
+	void *processFree;
+	void *processMemoryType;
+	void *processExit;
 }
+ElfKernelProcessInformation;
 
-void elfLoaderKernProcessExecute(void *arg)
-{
-	elfLoaderKernExecuteEx((ElfRunKernelArgument *)arg, NULL);
-	kproc_exit(0);
-}
+//extern void elfPayloadProcessMain(void *arg);
+//extern int elfPayloadProcessMainSize;
 
-int elfLoaderKernExecute(struct thread *td, ElfRunKernelArgument *arg)
+typedef void (*ElfProcessExit)(int ret);
+typedef void (*ElfProcessFree)(void *m, void *t);
+void elfPayloadProcessMain(void *arg)
 {
-	int r, ret;
-	ret = 0;
- 	r = elfLoaderKernExecuteEx(arg, &ret);
-	ps4KernThreadSetReturn0(td, ret);
-	return r;
+	ElfKernelProcessInformation *pargs = arg;
+	ElfProcessExit pexit = (ElfProcessExit)pargs->processExit;
+	((ElfMain)pargs->main)(pargs->argc, pargs->argv);
+	((ElfProcessFree)pargs->processFree)(pargs, pargs->processMemoryType);
+	//pexit(0); //FIXME: Hmm? Oo -> panics, should not, example sys/dev/mmc/mmcsd.c
 }
 
 int elfLoaderKernMain(struct thread *td, void *uap)
 {
-	struct proc *newp;
-	ElfRunKernelArgument *arg = (ElfRunKernelArgument *)uap;
+	ElfRunKernelArgument *arg;
+	ElfKernelProcessInformation *pargs;
+	char buf[32];
+	Elf *elf;
+	int isProcess, r;
+	int elfPayloadProcessMainSize = 64; // adapt if needed
 
-	if(arg->process == 0)
-		return elfLoaderKernExecute(td, arg);
+	arg = (ElfRunKernelArgument *)uap;
+	if(arg == NULL || arg->data == NULL)
+		return PS4_ERROR_ARGUMENT_MISSING;
 
-	if(kproc_create(elfLoaderKernProcessExecute, uap, &newp, RFPROC | RFNOWAIT | RFCFDG, 0, "ps4sdk-elf") != 0)
+	isProcess = arg->isProcess;
+ 	elf = elfCreateLocalUnchecked((void *)buf, arg->data, arg->size);
+
+	pargs = ps4KernMemoryMalloc(sizeof(ElfKernelProcessInformation) + elfPayloadProcessMainSize + elfMemorySize(elf));
+	if(pargs == NULL)
 	{
-		ps4KernelMemoryFree(arg->data);
-		ps4KernelMemoryFree(arg);
+		ps4KernMemoryFree(arg->data);
+		ps4KernMemoryFree(arg);
 		return PS4_KERN_ERROR_OUT_OF_MEMORY;
 	}
 
-	ps4KernThreadSetReturn0(td, (register_t)newp);
+	// memory = (info, procmain, main)
+	pargs->processMain = (uint8_t *)pargs + sizeof(ElfKernelProcessInformation);
+	pargs->main = pargs->processMain + elfPayloadProcessMainSize;
+	r = elfLoaderLoad(elf, pargs->main, pargs->main); // delay error return til cleanup
+	pargs->main += elfEntry(elf);
+
+	// aux
+	pargs->argc = 1;
+	pargs->argv[0] = pargs->elfName;
+	pargs->argv[1] = NULL;
+	pargs->argv[2] = NULL;
+	strcpy(pargs->elfName, "kernel-elf");
+
+	// Free user argument
+	ps4KernMemoryFree(arg->data);
+	ps4KernMemoryFree(arg);
+
+	if(r != ELF_LOADER_RETURN_OK)
+	{
+		ps4KernMemoryFree(pargs);
+		return r;
+	}
+
+	if(!isProcess)
+	{
+		int r;
+		r = ((ElfMain)pargs->main)(pargs->argc, pargs->argv);
+		ps4KernMemoryFree(pargs);
+		ps4KernThreadSetReturn0(td, (register_t)r);
+		return PS4_OK;
+	}
+
+	pargs->processFree = ps4KernDlSym("free");
+	pargs->processMemoryType = ps4KernDlSym("M_TEMP");
+	pargs->processExit = ps4KernDlSym("kproc_exit");
+	ps4KernMemoryCopy((void *)elfPayloadProcessMain, pargs->processMain, elfPayloadProcessMainSize);
+
+	if(kproc_create((ElfProcessMain)pargs->processMain, pargs, &pargs->process, 0, 0, "ps4sdk-elf-%p", pargs) != 0)
+	{
+		ps4KernMemoryFree(pargs);
+		ps4KernThreadSetReturn0(td, (register_t)PS4_KERN_ERROR_KPROC_NOT_CREATED);
+		return PS4_KERN_ERROR_KPROC_NOT_CREATED;
+	}
+
+	ps4KernThreadSetReturn0(td, (register_t)pargs->process); // FIXME: Races against free
 	return PS4_OK;
 }
