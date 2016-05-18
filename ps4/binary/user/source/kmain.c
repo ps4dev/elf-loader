@@ -26,7 +26,7 @@ typedef struct ElfKernelProcessInformation
 	struct proc *process;
 	uint8_t *processMain;
 	uint8_t *main;
-	int64_t argc;
+	int argc;
 	char *argv[3];
 	char elfName[128];
 	void *processFree;
@@ -43,7 +43,7 @@ typedef void (*ElfProcessFree)(void *m, void *t);
 void elfPayloadProcessMain(void *arg)
 {
 	ElfKernelProcessInformation *pargs = arg;
-	ElfProcessExit pexit = (ElfProcessExit)pargs->processExit;
+	//ElfProcessExit pexit = (ElfProcessExit)pargs->processExit;
 	((ElfMain)pargs->main)(pargs->argc, pargs->argv);
 	((ElfProcessFree)pargs->processFree)(pargs, pargs->processMemoryType);
 	//pexit(0); //FIXME: Hmm? Oo -> panics, should not, example sys/dev/mmc/mmcsd.c
@@ -113,10 +113,9 @@ int elfLoaderKernMain(struct thread *td, void *uap)
 	if(kproc_create((ElfProcessMain)pargs->processMain, pargs, &pargs->process, 0, 0, "ps4sdk-elf-%p", pargs) != 0)
 	{
 		ps4KernMemoryFree(pargs);
-		ps4KernThreadSetReturn0(td, (register_t)PS4_KERN_ERROR_KPROC_NOT_CREATED);
 		return PS4_KERN_ERROR_KPROC_NOT_CREATED;
 	}
 
 	ps4KernThreadSetReturn0(td, (register_t)pargs->process); // FIXME: Races against free
-	return PS4_OK;
+	return PS4_OK; //FIXME: This does not return 0 Oo?
 }

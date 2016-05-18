@@ -201,21 +201,20 @@ int elfLoaderUserRun(Elf *elf)
 	return PS4_OK;
 }
 
-/* Kernel & process elf runner */
-//FIXME: checks
+/* Kernel & process elf runner */ //FIXME: checks
 
 void *elfLoaderKernelMain(void *arg)
 {
 	int p;
 	int64_t r, ret;
 	ElfRunKernelArgument *ka = (ElfRunKernelArgument *)arg;
-	ps4KernelMemoryCopy(&ka->isProcess, &p, sizeof(int));
+	ps4KernelMemoryCopy(&ka->isProcess, &p, sizeof(int)); // ka is in kernel
 	ret = 0;
 	r = ps4KernelExecute((void *)elfLoaderKernMain, ka, &ret, NULL);
 	if(p == 0)
 		printf("return (kernel): %i %"PRId64"\n", r, ret);
 	else
-		printf("return (kernel process): %i %"PRId64"\n", r, ret);
+		printf("return (kernel process): %i %"PRId64"\n", r, ret); //FIXME: r should be 0 ...?!
 	return NULL;
 }
 
