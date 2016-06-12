@@ -8,7 +8,6 @@
 		<script type='text/javascript' src='js/exploit.js'></script>
 		<script type='text/javascript' src='js/just-rop.js'></script>
 		<script type='text/javascript' src='js/gadgets.js'></script>
-		<script type='text/javascript' src='ldr/ldr.js'></script>
 
 		<script type='text/javascript'>
 			var loopOnExit = true;
@@ -78,6 +77,23 @@
 				}
 
 				window.location.href = window.location.href.split('?')[0] + objectToSearchURI(params);
+			}
+
+			function ldrpre()
+			{
+				var params = searchURIToObject(window.location.search);
+				if(params['stage'] != 5)
+					return ldr();
+
+				(function(d, script)
+				{
+					script = d.createElement('script');
+					script.type = 'text/javascript';
+					script.async = true;
+					script.onload = function(){ldr();};
+					script.src = 'ldr/ldr.js';
+					d.getElementsByTagName('head')[0].appendChild(script);
+				}(document));
 			}
 
 			function ldr()
@@ -234,7 +250,7 @@
 	</head>
 	<body style="background-color:#000000;color:#11EE11">
 		<script type='text/javascript'>
-			document.body.onload = ldr;
+			document.body.onload = ldrpre;
 		</script>
 	</body>
 </html>

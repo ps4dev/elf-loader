@@ -1,21 +1,12 @@
-#define _XOPEN_SOURCE 700
-#define __BSD_VISIBLE 1
 #define _KERNEL
-#define _WANT_UCRED
+
 #include <sys/cdefs.h>
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
-#include <sys/kthread.h>
 
-#include <sys/unistd.h>
-
-#include <machine/specialreg.h>
-
-#undef offsetof
-#include <ps4/kern.h>
+#include <ps4/kernel.h>
 
 #include <elfloader.h>
 
@@ -35,11 +26,10 @@ typedef struct ElfKernelProcessInformation
 }
 ElfKernelProcessInformation;
 
-//extern void elfPayloadProcessMain(void *arg);
-//extern int elfPayloadProcessMainSize;
-
 typedef void (*ElfProcessExit)(int ret);
 typedef void (*ElfProcessFree)(void *m, void *t);
+
+// copy-able
 void elfPayloadProcessMain(void *arg)
 {
 	ElfKernelProcessInformation *pargs = arg;
@@ -65,12 +55,12 @@ int elfLoaderKernMain(struct thread *td, void *uap)
 	isProcess = arg->isProcess;
  	elf = elfCreateLocalUnchecked((void *)buf, arg->data, arg->size);
 
-	pargs = ps4KernMemoryMalloc(sizeof(ElfKernelProcessInformation) + elfPayloadProcessMainSize + elfMemorySize(elf));
+	pargs = ps4KernelMemoryMalloc(sizeof(ElfKernelProcessInformation) + elfPayloadProcessMainSize + elfMemorySize(elf));
 	if(pargs == NULL)
 	{
-		ps4KernMemoryFree(arg->data);
-		ps4KernMemoryFree(arg);
-		return PS4_KERN_ERROR_OUT_OF_MEMORY;
+		ps4KernelMemoryFree(arg->data);
+		ps4KernelMemoryFree(arg);
+		return PS4_ERROR_KERNEL_OUT_OF_MEMORY;
 	}
 
 	// memory = (info, procmain, main)
@@ -84,15 +74,15 @@ int elfLoaderKernMain(struct thread *td, void *uap)
 	pargs->argv[0] = pargs->elfName;
 	pargs->argv[1] = NULL;
 	pargs->argv[2] = NULL;
-	strcpy(pargs->elfName, "kernel-elf");
+	sprintf(pargs->elfName, "ps4sdk-elf-%p", pargs);
 
 	// Free user argument
-	ps4KernMemoryFree(arg->data);
-	ps4KernMemoryFree(arg);
+	ps4KernelMemoryFree(arg->data);
+	ps4KernelMemoryFree(arg);
 
 	if(r != ELF_LOADER_RETURN_OK)
 	{
-		ps4KernMemoryFree(pargs);
+		ps4KernelMemoryFree(pargs);
 		return r;
 	}
 
@@ -100,22 +90,22 @@ int elfLoaderKernMain(struct thread *td, void *uap)
 	{
 		int r;
 		r = ((ElfMain)pargs->main)(pargs->argc, pargs->argv);
-		ps4KernMemoryFree(pargs);
-		ps4KernThreadSetReturn0(td, (register_t)r);
+		ps4KernelMemoryFree(pargs);
+		ps4KernelThreadSetReturn(td, (register_t)r);
 		return PS4_OK;
 	}
 
-	pargs->processFree = ps4KernDlSym("free");
-	pargs->processMemoryType = ps4KernDlSym("M_TEMP");
-	pargs->processExit = ps4KernDlSym("kproc_exit");
-	ps4KernMemoryCopy((void *)elfPayloadProcessMain, pargs->processMain, elfPayloadProcessMainSize);
+	ps4KernelSymbolLookup("free", &pargs->processFree);
+	ps4KernelSymbolLookup("M_TEMP", &pargs->processMemoryType);
+	ps4KernelSymbolLookup("kproc_exit", &pargs->processExit);
+	ps4KernelMemoryCopy((void *)elfPayloadProcessMain, pargs->processMain, elfPayloadProcessMainSize);
 
 	if(kproc_create((ElfProcessMain)pargs->processMain, pargs, &pargs->process, 0, 0, "ps4sdk-elf-%p", pargs) != 0)
 	{
-		ps4KernMemoryFree(pargs);
-		return PS4_KERN_ERROR_KPROC_NOT_CREATED;
+		ps4KernelMemoryFree(pargs);
+		return PS4_ERROR_KERNEL_PROCESS_NOT_CREATED;
 	}
 
-	ps4KernThreadSetReturn0(td, (register_t)pargs->process); // FIXME: Races against free
+	ps4KernelThreadSetReturn(td, (register_t)pargs->process); // FIXME: Races against free
 	return PS4_OK; //FIXME: This does not return 0 Oo?
 }

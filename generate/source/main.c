@@ -14,7 +14,7 @@
 
 enum{ ELF_LOADER_BINARY_SEGMENT_SIZE = 0x100000 };
 
-void *ps4UtilFileAllocateFromPathAligned(char *file, size_t *size, size_t alignment)
+void *elfLoaderMemoryAllocateFileFromPathAligned(char *file, size_t *size, size_t alignment)
 {
 	struct stat s;
 	FILE *f;
@@ -69,7 +69,7 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	bin = ps4UtilFileAllocateFromPathAligned(argv[2], &s, 4);
+	bin = elfLoaderMemoryAllocateFileFromPathAligned(argv[2], &s, 4);
 	if(bin == NULL)
 	{
 		fprintf(stderr, "Bin %s could not be loaded\n", argv[2]);

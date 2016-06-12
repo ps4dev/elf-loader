@@ -806,6 +806,7 @@ int elfLoaderRelativeAddressIsExecutable(Elf *elf, int64_t address)
 	return 1; // FIXME: Recheck
 }
 
+// FIXME: Implement ps4 aware relocation for functions using dlsym
 int elfLoaderRelocate(Elf *elf, void *writable, void *executable)
 {
 	int i, j;
