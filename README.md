@@ -1,4 +1,4 @@
-#Elf loader
+# Elf loader
 
 Runs ps4sdk elf files in-process on your PS4.
 
@@ -12,11 +12,10 @@ You will also need a current version of clang or alter the Makefile (remove -tar
 
 You can of course use other tools for the server, upload or debug output (socat, netcat or a C implementation for example).
 
-The elf loader does not support dynamically linked executables. All libraries need to be statically linked into the executable. You can try musl for an easy to build and use statically linkable libc on your x86-64 linux system (e.g. to test elfs
-locally). Libps4 provides a statically linkable libc for the PS4.
+The elf loader does not support dynamically linked executables. All libraries need to be statically linked into the executable. [ps4sdk](https://github.com/ps4dev/ps4sdk) provides a variaty of position independant, statically linkable libraries, such as a libc, for the PS4.
 
-##Example
-```
+## Example
+```bash
 # build for the ps4 / we need to set all prefered defaults at build time (no args to main)
 make clean && make
 
