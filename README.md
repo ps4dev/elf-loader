@@ -37,8 +37,4 @@ socat -u FILE:../../ps4sdk-examples/kernel/function-hook/bin/function-hook TCP:<
 
 # Send kernel elf file (runs in webbrowser process)
 socat -u FILE:../../libps4-examples/libless/cache/bin/cache TCP:<ps4>:5054
-
-##Credit
-- Rop/Exec stuff goes to CTurt, flatz, SKFU, droogie, Xerpi, Hunger, Takezo, nas, Proxima
-	- No idea who did what - contact me to clarify (open an issue)
-	- Yifan (?)
+```
