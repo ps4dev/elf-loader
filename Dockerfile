@@ -24,11 +24,12 @@ RUN \
     make && \
     cd ../elf-loader && \
     make && \
+    cd .. && \
     rm -R /home/ps4dev/ps4sdk && \
     mv /home/ps4dev/elf-loader/local /home/ps4dev/elf-loader_ && \
-    rm -R /home/ps4dev/elf-loader && \
-    mv /home/ps4dev/elf-loader_ /home/ps4dev/elf-loader && \
-    chown -R ps4dev:ps4dev /home/ps4dev && \
+    rm -R /home/ps4dev/elf-loader/* && \
+    mv /home/ps4dev/elf-loader_ /home/ps4dev/elf-loader/local && \
+    chown -R ps4dev:ps4dev /home/ps4dev ; \
     xbps-remove -Ry make clang git ; \
     xbps-remove -Oy ; \
     xbps-remove -oy
