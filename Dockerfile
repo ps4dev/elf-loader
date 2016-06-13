@@ -1,16 +1,43 @@
 # ps4dev/elf-loader
-# FIXME: Bad for webhooks (make standalone - git clone sdk here)
+#
+# FIXME: Commit based docker hub webhooks are not a good trigger for dependent repos
+# The build is standalone for now (duplicates the sdk build, remove resources)
+# Need to change trigger or use travis for a more controllable build
 
-FROM ps4dev/elf-loader
+FROM voidlinux/voidlinux
 
-WORKDIR $PS4DEV/elf-loader
+ENV PS4DEV=/home/ps4dev
+ENV PS4SDK=$PS4DEV/ps4sdk
 
+RUN \
+    groupadd -r ps4dev && \
+    useradd --create-home -d /home/ps4dev --gid ps4dev ps4dev
+
+WORKDIR $PS4DEV
 COPY . $PS4DEV/elf-loader
 
-RUN xbps-install -Su xbps && xbps-install nodejs && make
+RUN \
+    xbps-install -Sy xbps ; \
+    xbps-install -Sy make clang git nodejs && \
+    git clone https://github.com/ps4dev/ps4sdk.git && \
+    cd ps4sdk && \
+    make && \
+    cd ../elf-loader && \
+    make && \
+    rm -R /home/ps4dev/ps4sdk && \
+    mv /home/ps4dev/elf-loader/local /home/ps4dev/elf-loader_ && \
+    rm -R /home/ps4dev/elf-loader && \
+    mv /home/ps4dev/elf-loader_ /home/ps4dev/elf-loader && \
+    chown -R ps4dev:ps4dev /home/ps4dev && \
+    xbps-remove -Ry make clang git ; \
+    xbps-remove -Oy ; \
+    xbps-remove -oy
+
+USER ps4dev
 
 EXPOSE 5350
 
-ENTRYPOINT ["node", "$PS4DEV/elf-loader/local/server.js"]
+WORKDIR $PS4DEV/elf-loader/local
 
-VOLUME $PS4DEV/elf-loader
+ENTRYPOINT ["node", "server.js", "."]
+CMD ["5350"]
