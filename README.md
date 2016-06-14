@@ -38,3 +38,15 @@ socat -u FILE:../../ps4sdk-examples/kernel/function-hook/bin/function-hook TCP:<
 # Send kernel elf file (runs in webbrowser process)
 socat -u FILE:../../libps4-examples/libless/cache/bin/cache TCP:<ps4>:5054
 ```
+
+## Docker images
+A stand alone elf-loader container is also available (but currently a bit large):
+
+```bash
+# Make sure newest container is used
+docker pull ps4dev/elf-loader
+# Run the elf loader (listens on port 5350)
+docker run -p 5350:5350 -rm ps4dev/elf-loader&
+# Stop elf loader
+docker kill $(docker ps -q -f ancestor=ps4dev/elf-loader)
+```

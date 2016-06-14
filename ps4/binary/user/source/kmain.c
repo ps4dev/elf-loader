@@ -95,9 +95,9 @@ int elfLoaderKernMain(struct thread *td, void *uap)
 		return PS4_OK;
 	}
 
-	ps4KernelSymbolLookup("free", &pargs->processFree);
-	ps4KernelSymbolLookup("M_TEMP", &pargs->processMemoryType);
-	ps4KernelSymbolLookup("kproc_exit", &pargs->processExit);
+	ps4KernelSymbolLookUp("free", &pargs->processFree);
+	ps4KernelSymbolLookUp("M_TEMP", &pargs->processMemoryType);
+	ps4KernelSymbolLookUp("kproc_exit", &pargs->processExit);
 	ps4KernelMemoryCopy((void *)elfPayloadProcessMain, pargs->processMain, elfPayloadProcessMainSize);
 
 	if(kproc_create((ElfProcessMain)pargs->processMain, pargs, &pargs->process, 0, 0, "ps4sdk-elf-%p", pargs) != 0)
