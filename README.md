@@ -42,10 +42,10 @@ socat -u FILE:ps4sdk-examples/kernel/cache/bin/cache TCP:<ps4>:5054
 A stand alone elf-loader container is available (but currently a bit large):
 
 ```bash
-# Make sure newest container is used
+# Make sure newest container is used (only do this as needed)
 docker pull ps4dev/elf-loader
 # Run the elf loader (listens on port 5350)
-docker run -p 5350:5350 -rm ps4dev/elf-loader&
+docker run -p 5350:5350 --rm ps4dev/elf-loader&
 # Stop elf loader
 docker kill $(docker ps -q -f ancestor=ps4dev/elf-loader)
 ```
