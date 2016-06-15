@@ -28,14 +28,16 @@ node server.js
 # Connect debug/stdio channel
 socat - TCP:<ps4>:5052
 
-# Send elf file
+# Send elf file to the user space process for execution
 socat -u FILE:ps4sdk-examples/libless/stress/bin/stress TCP:<ps4>:5053
-
-# Send kernel elf file (mode for long-running code, or module-like code)
+# OR Send kernel elf file (mode for long-running code, or module-like code)
 socat -u FILE:ps4sdk-examples/kernel/function-hook/bin/function-hook TCP:<ps4>:5055
-
-# Send kernel elf file (runs in webbrowser process)
+# OR Send kernel elf file (runs in the browsers process, but is loaded and executed into the kernel)
 socat -u FILE:ps4sdk-examples/kernel/cache/bin/cache TCP:<ps4>:5054
+
+# Some examples (esp. kernel) use a second socket for their comminication. The default choice is 5088
+# Connect to it after the upload to trigger the execution of the code - please see the examples sources for more
+socat - TCP:<ps4>:5088
 ```
 
 ## Docker images
