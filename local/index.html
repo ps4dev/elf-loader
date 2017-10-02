@@ -98,9 +98,13 @@
 
 			function ldr()
 			{
-				var version = 1.76
+				var version = 1.76 // 1.01 see gadgets.js too
 
 				var libKernelOffsets = {
+					1.01: {
+						createSharedMemory: 0x19660,
+						createSharedMemoryAlias: 0x196B0
+					},
 					1.76: {
 						createSharedMemory: 0x15170,
 						createSharedMemoryAlias: 0x151c0
