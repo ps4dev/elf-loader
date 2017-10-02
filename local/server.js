@@ -15,6 +15,12 @@ http.createServer(function(request, response)
 	{
 		if(!exists)
 		{
+			if(uri !== "/index.html") {
+				response.writeHead(302, {"Location": "/index.html"});
+				response.end();
+				return;
+			}
+
 			response.writeHead(404, {"Content-Type": "text/plain"});
 			response.write("404 Not Found\n");
 			response.end();
@@ -45,7 +51,6 @@ http.createServer(function(request, response)
 		{
 			response.writeHead(500, {"Content-Type": "text/plain"});
 			response.write(err + "\n");
-			//response.write("404 Not Found\n");
 			response.end();
 		});
 	});
